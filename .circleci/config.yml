@@ -87,9 +87,12 @@ jobs:
       # NOTE: Angular developers should typically just bazel build //packages/... or bazel test //packages/...
       - run: bazel query --output=label //... | xargs bazel test
 
-      # We run the integration tests outside of Bazel for now.
-      # See comments inside this script.
-      - run: xvfb-run --auto-servernum ./integration/run_tests.sh
+      # Save the npm packages from //packages/... for other workflow jobs to read
+      # https://circleci.com/docs/2.0/workflows/#using-workspaces-to-share-data-among-jobs
+      - persist_to_workspace:
+          root: dist/bin
+          paths:
+            - packages/*/npm_package
 
       # CircleCI will allow us to go back and view/download these artifacts from past builds.
       # Also we can use a service like https://buildsize.org/ to automatically track binary size of these artifacts.
@@ -112,6 +115,41 @@ jobs:
             - "node_modules"
             - "~/bazel_repository_cache"
 
+  # We run the integration tests outside of Bazel for now.
+  # They are a separate workflow job so that they can be easily re-run.
+  # When the tests are ported to bazel test targets, they should move to the "build"
+  # job above, as part of the bazel test command. This has flaky_test_attempts so the
+  # need to re-run manually should be alleviated.
+  # See comments inside the integration/run_tests.sh script.
+  integration_test:
+    <<: *job_defaults
+    steps:
+      - *define_env_vars
+      - checkout:
+          <<: *post_checkout
+      - attach_workspace:
+          at: bazel-bin
+      - run: xvfb-run --auto-servernum ./integration/run_tests.sh
+
+  # This job updates the content of repos like github.com/angular/core-builds
+  # for every green build on angular/angular.
+  publish_snapshot:
+    <<: *job_defaults
+    steps:
+      - checkout:
+          <<: *post_checkout
+      - attach_workspace:
+          at: bazel-bin
+      # CircleCI has a config setting to force SSH for all github connections
+      # This is not compatible with our mechanism of using a Personal Access Token
+      # Clear the global setting
+      - run: git config --global --unset "url.ssh://git@github.com.insteadof"
+      - run:
+          name: Decrypt Credentials
+          # See ./README.md
+          command: openssl aes-256-cbc -d -in .circleci/github_token -k "${KEY}" -out ~/.git_credentials
+      - run: ./scripts/ci/publish-build-artifacts.sh
+
   aio_monitoring:
     <<: *job_defaults
     steps:
@@ -127,6 +165,18 @@ workflows:
     jobs:
       - lint
       - build
+      - integration_test:
+          requires:
+            - build
+      - publish_snapshot:
+          # Note: no filters on this job because we want it to run for all upstream branches
+          # We'd really like to filter out pull requests here, but not yet available:
+          # https://discuss.circleci.com/t/workflows-pull-request-filter/14396/4
+          # Instead, the publish-build-artifacts.sh script just terminates when
+          # CIRCLE_PULL_REQUEST is set.
+          requires:
+            - build
+
   aio_monitoring:
     jobs:
       - aio_monitoring

@@ -9,18 +9,23 @@ cd "$(dirname "$0")"
 
 # basedir is the workspace root
 readonly basedir=$(pwd)/..
-readonly bin=$(bazel info bazel-bin)
 
-echo "#################################"
-echo "Building @angular/* npm packages "
-echo "#################################"
-
-# Ideally these integration tests should run under bazel, and just list the npm
-# packages in their deps[].
-# Until then, we have to manually run bazel first to create the npm packages we
-# want to test.
-bazel query --output=label 'kind(.*_package, //packages/...)' \
-  | xargs bazel build
+if $CI; then
+  # The npm packages were built by an earlier job and artifacts dropped off in
+  # the bazel-packages folder. see /.circleci/config.yml
+  readonly bin=bazel-bin
+else
+  echo "#################################"
+  echo "Building @angular/* npm packages "
+  echo "#################################"
+  # Ideally these integration tests should run under bazel, and just list the npm
+  # packages in their deps[].
+  # Until then, we have to manually run bazel first to create the npm packages we
+  # want to test.
+  bazel query --output=label 'kind(.*_package, //packages/...)' \
+    | xargs bazel build
+  readonly bin=$(bazel info bazel-bin)
+fi
 
 # Allow this test to run even if dist/ doesn't exist yet.
 # Under Bazel we don't need to create the dist folder to run the integration tests
