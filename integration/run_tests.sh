@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e -o pipefail
+set -u -e -o pipefail
 
 # see https://circleci.com/docs/2.0/env-vars/#circleci-built-in-environment-variables
 CI=${CI:-false}
@@ -13,7 +13,7 @@ readonly basedir=$(pwd)/..
 if $CI; then
   # The npm packages were built by an earlier job and artifacts dropped off in
   # the bazel-packages folder. see /.circleci/config.yml
-  readonly bin=bazel-bin
+  readonly bin="${PROJECT_ROOT}/bazel-bin"
 else
   echo "#################################"
   echo "Building @angular/* npm packages "
@@ -33,10 +33,13 @@ fi
 # Each package is a subdirectory of bazel-bin/packages/
 for pkg in $(ls ${bin}/packages); do
   # Skip any that don't have an "npm_package" target
-  if [ -d "${bin}/packages/${pkg}/npm_package" ]; then
-    echo "# Copy artifacts to dist/packages-dist/${pkg}"
-    rm -rf ${basedir}/dist/packages-dist/${pkg}
-    cp -R ${bin}/packages/${pkg}/npm_package ${basedir}/dist/packages-dist/${pkg}
+  srcDir="${bin}/packages/${pkg}/npm_package"
+  destDir="${basedir}/dist/packages-dist/${pkg}"
+  if [ -d $srcDir ]; then
+    echo "# Copy artifacts to ${destDir}"
+    rm -rf $destDir
+    cp -R $srcDir $destDir
+    chmod -R u+w $destDir
   fi
 done
 
@@ -48,6 +51,10 @@ if $CI; then
   # payload sizes on CI.
   yarn add -D firebase-tools@3.12.0
   source ${basedir}/scripts/ci/payload-size.sh
+  # $KEY is set only on non-PR builds. See /.circleci/README.md
+  if [[ -v KEY ]]; then
+    export ANGULAR_PAYLOAD_FIREBASE_TOKEN=$(openssl aes-256-cbc -d -in ${basedir}/.circleci/firebase_token -k "$KEY")
+  fi
 fi
 
 # Workaround https://github.com/yarnpkg/yarn/issues/2165
@@ -68,7 +75,7 @@ for testDir in $(ls | grep -v node_modules) ; do
   (
     cd $testDir
     rm -rf dist
-    pwd
+
     yarn install --cache-folder ../$cache
     yarn test || exit 1
     # Track payload size for cli-hello-world and hello_world__closure and the render3 tests
@@ -76,15 +83,15 @@ for testDir in $(ls | grep -v node_modules) ; do
       if [[ $testDir == cli-hello-world ]] || [[ $testDir == hello_world__render3__cli ]]; then
         yarn build
       fi
-      #if $CI; then
-      #  trackPayloadSize "$testDir" "dist/*.js" true false "${basedir}/integration/_payload-limits.json"
-      #fi
+      if $CI; then
+        trackPayloadSize "$testDir" "dist/*.js" true false "${basedir}/integration/_payload-limits.json"
+      fi
     fi
     # remove the temporary node modules directory to keep the source folder clean.
     rm -rf node_modules
   )
 done
 
-#if $CI; then
-#  trackPayloadSize "umd" "../dist/packages-dist/*/bundles/*.umd.min.js" false false
-#fi
+if $CI; then
+  trackPayloadSize "umd" "../dist/packages-dist/*/bundles/*.umd.min.js" false false
+fi
