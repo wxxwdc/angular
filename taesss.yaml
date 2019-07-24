@@ -1,0 +1,48 @@
+---
+swagger: "2.0"
+info:
+  version: "1.0.0"
+  title: "swagger definition for com.huawei.cse.banchmark.base.rest.SpringmvcHelloImpl"
+  x-java-interface: "cse.gen.fast_rest.serverxuyang.springmvcHello.SpringmvcHelloImplIntf"
+basePath: "/SpringmvcHelloImpl"
+schemes:
+- "http"
+consumes:
+- "application/json"
+produces:
+- "application/json"
+paths:
+  /sayhello:
+    post:
+      operationId: "sayHello"
+      parameters:
+      - in: "body"
+        name: "person"
+        required: true
+        schema:
+          $ref: "#/definitions/Person"
+      responses:
+        200:
+          description: "response of 200"
+          schema:
+            type: "string"
+  /sayhi:
+    get:
+      operationId: "sayHi"
+      parameters:
+      - name: "name"
+        in: "query"
+        required: false
+        type: "string"
+      responses:
+        200:
+          description: "response of 200"
+          schema:
+            type: "string"
+definitions:
+  Person:
+    type: "object"
+    properties:
+      name:
+        type: "string"
+    x-java-class: "com.huawei.cse.banchmark.base.rest.Person"
